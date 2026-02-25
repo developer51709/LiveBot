@@ -13,12 +13,12 @@ $PACKAGE ../ --platform=darwin,linux,win32 --arch=x64,arm64 --icon=../resources/
 
 # Archive
 for dir in $(ls); do
-	zip -rv "$dir".tar.gz "$dir" &
+	zip -rv "$dir".zip "$dir" &
 done
 wait
 
 # Sign
-for archive in $(ls *.gz); do
+for archive in $(ls *.zip); do
 	gpg -ab "$archive"
 	gpg --verify "$archive".asc
 done
