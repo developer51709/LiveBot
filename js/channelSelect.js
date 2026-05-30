@@ -14,101 +14,41 @@
 
 'use strict';
 
-// Voice-like channel types — joined, not typed in
-const VOICE_CHANNEL_TYPES = [
-    Discord.ChannelType.GuildVoice,
-    Discord.ChannelType.GuildStageVoice,
-];
-
-// Forum-like channel types — post list view
-const FORUM_CHANNEL_TYPES = [
-    Discord.ChannelType.GuildForum,
-    Discord.ChannelType.GuildMedia,
-];
-
 let channelSelect = (c, name) => {
-    // ── Voice channels ──────────────────────────────────────────────────────
-    if (VOICE_CHANNEL_TYPES.includes(c.type)) {
-        selectedVoice = c;
+    let messages = document.getElementById('message-list');
+    let fetchSize = 100;
 
-        // Hide forum back bar if open
-        document.getElementById('forumBackBar')?.remove();
-        // Reset forum state
-        if (typeof currentForumChannel !== 'undefined') {
-            currentForumChannel = null;
-            currentForumThread = null;
-        }
-
-        // Reset message-list if we were in forum view
-        const messages = document.getElementById('message-list');
-        messages.style.overflow = '';
-        messages.style.padding = '';
-        while (messages.firstChild) messages.removeChild(messages.firstChild);
-        document.getElementById('sendmsg').style.display = 'none';
-
-        // Join the voice channel
-        joinVoice(c);
-        return;
-    }
-
-    // ── Forum / Media channels ──────────────────────────────────────────────
-    if (FORUM_CHANNEL_TYPES.includes(c.type)) {
-        // Leave voice if active
-        if (typeof currentVoiceChannel !== 'undefined' && currentVoiceChannel) {
-            leaveVoice(true);
-            const messages = document.getElementById('message-list');
-            messages.style.overflow = '';
-            messages.style.padding = '';
-            while (messages.firstChild) messages.removeChild(messages.firstChild);
-        }
-
-        showForumPosts(c);
-        return;
-    }
-
-    // ── Regular text-based channels ─────────────────────────────────────────
     if (!Discord.Constants.TextBasedChannelTypes.includes(c.type)) {
-        // Unknown type — ignore silently
+        selectedVoice = c;
         return;
     }
 
-    // Clean up voice/forum state
-    if (typeof currentVoiceChannel !== 'undefined' && currentVoiceChannel) {
-        leaveVoice(true);
+    if (generatingMessages) {
+        return;
     }
-    document.getElementById('forumBackBar')?.remove();
-    if (typeof currentForumChannel !== 'undefined') {
-        currentForumChannel = null;
-        currentForumThread = null;
-    }
-
-    if (generatingMessages) return;
 
     selectedChan = c;
     selectedChanDiv = name;
     name.style.color = '#eee';
+    messageCreate();
 
-    // Show send bar (might have been hidden)
-    document.getElementById('sendmsg').style.display = '';
+    // Refresh the typing indicator
+    typingStatus(true);
 
-    // Set message bar placeholder
+    // Set the message bar placeholder
     document.getElementById('msgbox').placeholder = `Message #${c.name}`;
 
-    // Remove new-message notification
+    // Remove the notification class
     name.classList.remove('newMsg');
 
-    const messages = document.getElementById('message-list');
+    // Clear the messages
+    while (messages.firstChild) {
+        messages.removeChild(messages.firstChild);
+    }
 
-    // Restore normal message-list styles in case coming from voice/forum
-    messages.style.overflow = '';
-    messages.style.padding = '';
-
-    // Clear messages
-    while (messages.firstChild) messages.removeChild(messages.firstChild);
-
-    // Loading indicator
-    const container = document.createElement('div');
-    const loadingDots = document.createElement('div');
+    // Creates the loading dots
+    var container = document.createElement('div'); // Centred container
+    var loadingDots = document.createElement('div'); // Loading dots
     loadingDots.classList.add('dot-bricks');
     container.style.position = 'absolute';
     container.style.top = '50%';
@@ -118,72 +58,80 @@ let channelSelect = (c, name) => {
     container.appendChild(loadingDots);
     messages.appendChild(container);
 
-    // Colour the channel name
+    // Set colour of the channel
     try {
         selectedChanDiv.style.color = '#606266';
         name.addEventListener('mouseover', () => {
-            if (name.style.color != 'rgb(238, 238, 238)') name.style.color = '#B4B8BC';
+            if (name.style.color != 'rgb(238, 238, 238)') {
+                name.style.color = '#B4B8BC';
+            }
         });
+
         name.addEventListener('mouseleave', () => {
-            if (name.style.color != 'rgb(238, 238, 238)') name.style.color = '#606266';
+            if (name.style.color != 'rgb(238, 238, 238)') {
+                name.style.color = '#606266';
+            }
         });
     } catch (err) {
         console.log(err);
     }
 
-    // Refresh member list
+    // Create the member list
     addMemberList(c.guild);
 
-    // Fetch and render messages
+    // Create message
     async function messageCreate() {
         generatingMessages = true;
-        const fetchSize = 100;
+        // Loop through messages
         let count = 0;
-        await c.messages.fetch({ limit: fetchSize }).then((msgs) => {
-            msgs
+        await c.messages.fetch({ limit: fetchSize }).then((messages) => {
+            messages
                 .toJSON()
                 .reverse()
                 .forEach((m) => {
                     count++;
-                    const el = generateMsgHTML(
+                    let message = generateMsgHTML(
                         m,
-                        msgs.toJSON().reverse()[count - 2],
+                        messages.toJSON().reverse()[count - 2],
                         count,
                         fetchSize
                     );
-                    document.getElementById('message-list').appendChild(el);
+                    document
+                        .getElementById('message-list')
+                        .appendChild(message);
                 });
         });
-
-        const shell = document.createElement('div');
+        // Add the no load apology
+        let shell = document.createElement('div');
         shell.classList.add('sorryNoLoad');
-        const text = document.createElement('p');
-        text.innerText = 'Sorry! No messages beyond this point can be displayed.';
+        let text = document.createElement('p');
+        text.innerText =
+            'Sorry! No messages beyond this point can be displayed.';
         shell.appendChild(text);
         document.getElementById('message-list').prepend(shell);
 
         messages.scrollTop = messages.scrollHeight;
         generatingMessages = false;
+
+        // Remove the loading dots
         messages.removeChild(document.getElementById('loading-container'));
     }
-
-    messageCreate();
-    typingStatus(true);
 };
 
 let dmChannelSelect = async (u, name = 'test') => {
     if (u.bot || bot.user == u) return;
-    const messages = document.getElementById('message-list');
-    const fetchSize = 100;
+    let messages = document.getElementById('message-list');
+    let fetchSize = 100;
 
-    // Clean up voice/forum state
-    if (typeof currentVoiceChannel !== 'undefined' && currentVoiceChannel) leaveVoice(true);
-    document.getElementById('forumBackBar')?.remove();
+    if (!u.dmChannel) {
+        await u.createDM();
+    }
 
-    if (!u.dmChannel) await u.createDM();
-    const c = u.dmChannel;
+    let c = u.dmChannel;
 
-    if (generatingMessages) return;
+    if (generatingMessages) {
+        return;
+    }
     if (!u.openDM) u.openDM = true;
 
     if (selectedChatDiv) {
@@ -193,45 +141,53 @@ let dmChannelSelect = async (u, name = 'test') => {
 
     selectedChan = c;
 
-    // Ensure send bar is visible
-    document.getElementById('sendmsg').style.display = '';
-    messages.style.overflow = '';
-    messages.style.padding = '';
+    messageCreate();
 
+    // Refresh the typing indicator
     typingStatus(true);
-    document.getElementById('msgbox').placeholder = `Message #${c.recipient.username}`;
 
-    while (messages.firstChild) messages.removeChild(messages.firstChild);
+    // Set the message bar placeholder
+    document.getElementById(
+        'msgbox'
+    ).placeholder = `Message #${c.recipient.username}`;
 
+    // Clear the messages
+    while (messages.firstChild) {
+        messages.removeChild(messages.firstChild);
+    }
+
+    // Create message
     async function messageCreate() {
         generatingMessages = true;
+        // Loop through messages
         let count = 0;
-        await c.messages.fetch({ limit: fetchSize }).then((msgs) => {
-            msgs
+        await c.messages.fetch({ limit: fetchSize }).then((messages) => {
+            messages
                 .toJSON()
                 .reverse()
                 .forEach((m) => {
                     count++;
-                    const el = generateMsgHTML(
+                    let message = generateMsgHTML(
                         m,
-                        msgs.toJSON().reverse()[count - 2],
+                        messages.toJSON().reverse()[count - 2],
                         count,
                         fetchSize
                     );
-                    document.getElementById('message-list').appendChild(el);
+                    document
+                        .getElementById('message-list')
+                        .appendChild(message);
                 });
         });
-
-        const shell = document.createElement('div');
+        // Add the no load apology
+        let shell = document.createElement('div');
         shell.classList.add('sorryNoLoad');
-        const text = document.createElement('p');
-        text.innerText = 'Sorry! No messages beyond this point can be displayed.';
+        let text = document.createElement('p');
+        text.innerText =
+            'Sorry! No messages beyond this point can be displayed.';
         shell.appendChild(text);
         document.getElementById('message-list').prepend(shell);
 
         messages.scrollTop = messages.scrollHeight;
         generatingMessages = false;
     }
-
-    messageCreate();
 };
