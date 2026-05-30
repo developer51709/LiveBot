@@ -172,3 +172,24 @@ h5 {
 .blocked:hover h5 {
     opacity: 1;
 }
+
+/* Member count badge on voice channels */
+.vcMemberBadge {
+    display: inline-block;
+    font-size: 11px;
+    padding: 1px 5px;
+    border-radius: 8px;
+    background-color: #4f545c;
+    color: #b9bbbe;
+    margin-left: 6px;
+    transform: translateY(-9px);
+    vertical-align: middle;
+}
+
+/* Style stage and forum channel icons at same size as voice */
+.GuildStageVoice,
+.GuildForum,
+.GuildMedia {
+    user-select: none;
+    margin-left: -5px;
+}

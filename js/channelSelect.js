@@ -14,41 +14,101 @@
 
 'use strict';
 
+// Voice-like channel types — joined, not typed in
+const VOICE_CHANNEL_TYPES = [
+    Discord.ChannelType.GuildVoice,
+    Discord.ChannelType.GuildStageVoice,
+];
+
+// Forum-like channel types — post list view
+const FORUM_CHANNEL_TYPES = [
+    Discord.ChannelType.GuildForum,
+    Discord.ChannelType.GuildMedia,
+];
+
 let channelSelect = (c, name) => {
-    let messages = document.getElementById('message-list');
-    let fetchSize = 100;
-
-    if (!Discord.Constants.TextBasedChannelTypes.includes(c.type)) {
+    // ── Voice channels ──────────────────────────────────────────────────────
+    if (VOICE_CHANNEL_TYPES.includes(c.type)) {
         selectedVoice = c;
+
+        // Hide forum back bar if open
+        document.getElementById('forumBackBar')?.remove();
+        // Reset forum state
+        if (typeof currentForumChannel !== 'undefined') {
+            currentForumChannel = null;
+            currentForumThread = null;
+        }
+
+        // Reset message-list if we were in forum view
+        const messages = document.getElementById('message-list');
+        messages.style.overflow = '';
+        messages.style.padding = '';
+        while (messages.firstChild) messages.removeChild(messages.firstChild);
+        document.getElementById('sendmsg').style.display = 'none';
+
+        // Join the voice channel
+        joinVoice(c);
         return;
     }
 
-    if (generatingMessages) {
+    // ── Forum / Media channels ──────────────────────────────────────────────
+    if (FORUM_CHANNEL_TYPES.includes(c.type)) {
+        // Leave voice if active
+        if (typeof currentVoiceChannel !== 'undefined' && currentVoiceChannel) {
+            leaveVoice(true);
+            const messages = document.getElementById('message-list');
+            messages.style.overflow = '';
+            messages.style.padding = '';
+            while (messages.firstChild) messages.removeChild(messages.firstChild);
+        }
+
+        showForumPosts(c);
         return;
     }
+
+    // ── Regular text-based channels ─────────────────────────────────────────
+    if (!Discord.Constants.TextBasedChannelTypes.includes(c.type)) {
+        // Unknown type — ignore silently
+        return;
+    }
+
+    // Clean up voice/forum state
+    if (typeof currentVoiceChannel !== 'undefined' && currentVoiceChannel) {
+        leaveVoice(true);
+    }
+    document.getElementById('forumBackBar')?.remove();
+    if (typeof currentForumChannel !== 'undefined') {
+        currentForumChannel = null;
+        currentForumThread = null;
+    }
+
+    if (generatingMessages) return;
 
     selectedChan = c;
     selectedChanDiv = name;
     name.style.color = '#eee';
-    messageCreate();
 
-    // Refresh the typing indicator
-    typingStatus(true);
+    // Show send bar (might have been hidden)
+    document.getElementById('sendmsg').style.display = '';
 
-    // Set the message bar placeholder
+    // Set message bar placeholder
     document.getElementById('msgbox').placeholder = `Message #${c.name}`;
 
-    // Remove the notification class
+    // Remove new-message notification
     name.classList.remove('newMsg');
 
-    // Clear the messages
-    while (messages.firstChild) {
-        messages.removeChild(messages.firstChild);
-    }
+    const messages = document.getElementById('message-list');
 
-    // Creates the loading dots
-    var container = document.createElement('div'); // Centred container
-    var loadingDots = document.createElement('div'); // Loading dots
+    // Restore normal message-list styles in case coming from voice/forum
+    messages.style.overflow = '';
+    messages.style.padding = '';
+
+    // Clear messages
+    while (messages.firstChild) messages.removeChild(messages.firstChild);
+
+    // Loading indicator
+    const container = document.createElement('div');
+    const loadingDots = document.createElement('div');
     loadingDots.classList.add('dot-bricks');
     container.style.position = 'absolute';
     container.style.top = '50%';
@@ -58,80 +118,72 @@ let channelSelect = (c, name) => {
     container.appendChild(loadingDots);
     messages.appendChild(container);
 
-    // Set colour of the channel
+    // Colour the channel name
     try {
         selectedChanDiv.style.color = '#606266';
         name.addEventListener('mouseover', () => {
-            if (name.style.color != 'rgb(238, 238, 238)') {
-                name.style.color = '#B4B8BC';
-            }
+            if (name.style.color != 'rgb(238, 238, 238)') name.style.color = '#B4B8BC';
         });
-
         name.addEventListener('mouseleave', () => {
-            if (name.style.color != 'rgb(238, 238, 238)') {
-                name.style.color = '#606266';
-            }
+            if (name.style.color != 'rgb(238, 238, 238)') name.style.color = '#606266';
         });
     } catch (err) {
         console.log(err);
     }
 
-    // Create the member list
+    // Refresh member list
     addMemberList(c.guild);
 
-    // Create message
+    // Fetch and render messages
     async function messageCreate() {
         generatingMessages = true;
-        // Loop through messages
+        const fetchSize = 100;
         let count = 0;
-        await c.messages.fetch({ limit: fetchSize }).then((messages) => {
-            messages
+        await c.messages.fetch({ limit: fetchSize }).then((msgs) => {
+            msgs
                 .toJSON()
                 .reverse()
                 .forEach((m) => {
                     count++;
-                    let message = generateMsgHTML(
+                    const el = generateMsgHTML(
                         m,
-                        messages.toJSON().reverse()[count - 2],
+                        msgs.toJSON().reverse()[count - 2],
                         count,
                         fetchSize
                     );
-                    document
-                        .getElementById('message-list')
-                        .appendChild(message);
+                    document.getElementById('message-list').appendChild(el);
                 });
         });
-        // Add the no load apology
-        let shell = document.createElement('div');
+
+        const shell = document.createElement('div');
         shell.classList.add('sorryNoLoad');
-        let text = document.createElement('p');
-        text.innerText =
-            'Sorry! No messages beyond this point can be displayed.';
+        const text = document.createElement('p');
+        text.innerText = 'Sorry! No messages beyond this point can be displayed.';
         shell.appendChild(text);
         document.getElementById('message-list').prepend(shell);
 
         messages.scrollTop = messages.scrollHeight;
         generatingMessages = false;
-
-        // Remove the loading dots
         messages.removeChild(document.getElementById('loading-container'));
     }
+
+    messageCreate();
+    typingStatus(true);
 };
 
 let dmChannelSelect = async (u, name = 'test') => {
     if (u.bot || bot.user == u) return;
-    let messages = document.getElementById('message-list');
-    let fetchSize = 100;
+    const messages = document.getElementById('message-list');
+    const fetchSize = 100;
 
-    if (!u.dmChannel) {
-        await u.createDM();
-    }
+    // Clean up voice/forum state
+    if (typeof currentVoiceChannel !== 'undefined' && currentVoiceChannel) leaveVoice(true);
+    document.getElementById('forumBackBar')?.remove();
 
-    let c = u.dmChannel;
+    if (!u.dmChannel) await u.createDM();
+    const c = u.dmChannel;
 
-    if (generatingMessages) {
-        return;
-    }
+    if (generatingMessages) return;
     if (!u.openDM) u.openDM = true;
 
     if (selectedChatDiv) {
@@ -141,53 +193,45 @@ let dmChannelSelect = async (u, name = 'test') => {
 
     selectedChan = c;
 
-    messageCreate();
+    // Ensure send bar is visible
+    document.getElementById('sendmsg').style.display = '';
+    messages.style.overflow = '';
+    messages.style.padding = '';
 
-    // Refresh the typing indicator
     typingStatus(true);
+    document.getElementById('msgbox').placeholder = `Message #${c.recipient.username}`;
 
-    // Set the message bar placeholder
-    document.getElementById(
-        'msgbox'
-    ).placeholder = `Message #${c.recipient.username}`;
+    while (messages.firstChild) messages.removeChild(messages.firstChild);
 
-    // Clear the messages
-    while (messages.firstChild) {
-        messages.removeChild(messages.firstChild);
-    }
-
-    // Create message
     async function messageCreate() {
         generatingMessages = true;
-        // Loop through messages
         let count = 0;
-        await c.messages.fetch({ limit: fetchSize }).then((messages) => {
-            messages
+        await c.messages.fetch({ limit: fetchSize }).then((msgs) => {
+            msgs
                 .toJSON()
                 .reverse()
                 .forEach((m) => {
                     count++;
-                    let message = generateMsgHTML(
+                    const el = generateMsgHTML(
                         m,
-                        messages.toJSON().reverse()[count - 2],
+                        msgs.toJSON().reverse()[count - 2],
                         count,
                         fetchSize
                     );
-                    document
-                        .getElementById('message-list')
-                        .appendChild(message);
+                    document.getElementById('message-list').appendChild(el);
                 });
         });
-        // Add the no load apology
-        let shell = document.createElement('div');
+
+        const shell = document.createElement('div');
         shell.classList.add('sorryNoLoad');
-        let text = document.createElement('p');
-        text.innerText =
-            'Sorry! No messages beyond this point can be displayed.';
+        const text = document.createElement('p');
+        text.innerText = 'Sorry! No messages beyond this point can be displayed.';
         shell.appendChild(text);
         document.getElementById('message-list').prepend(shell);
 
         messages.scrollTop = messages.scrollHeight;
         generatingMessages = false;
     }
+
+    messageCreate();
 };
